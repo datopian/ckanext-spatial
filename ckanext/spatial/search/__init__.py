@@ -19,6 +19,54 @@ log = logging.getLogger(__name__)
 class SpatialSearchBackend:
     """Base class for all datastore backends."""
 
+    def process_spatial_field(self, geom_from_metadata):
+        """Process spatial field based on its format (dict with spatial_type or GeoJSON string)"""
+        # if string then convert to dict
+        if isinstance(geom_from_metadata, str):
+            geom_from_metadata = dict(json.loads(geom_from_metadata))
+
+        # Handle dict format with spatial_type
+        if isinstance(geom_from_metadata, dict):
+            spatial_type = geom_from_metadata.get("spatial_type")
+            value = geom_from_metadata.get("value")
+            
+            if spatial_type == "bbox" and value:
+                # Convert bbox array to GeoJSON polygon
+                # bbox format: [Northernmost latitude, Southernmost latitude, Easternmost longitude, Westernmost longitude]
+                if len(value) == 4:
+                    maxy, miny, maxx, minx = value
+                    geometry = {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [minx, miny],
+                            [maxx, miny],
+                            [maxx, maxy],
+                            [minx, maxy],
+                            [minx, miny]
+                        ]]
+                    }
+                    return geometry
+                else:
+                    log.error("Invalid bbox format, expected 4 values, not indexing :: {}".format(value))
+                    return None
+            
+            elif spatial_type == "wkt" and value:
+                # Convert WKT to GeoJSON using shapely
+                try:
+                    from shapely import wkt as shapely_wkt
+                    shape = shapely_wkt.loads(value.strip())
+                    # Convert shapely geometry to GeoJSON-like dict
+                    geometry = shapely.geometry.mapping(shape)
+                    return geometry
+                except Exception as e:
+                    log.error("Failed to parse WKT geometry: {}, not indexing :: {}".format(e, value[:100]))
+                    return None
+            else:
+                log.error("Unknown spatial_type or missing value: {}".format(spatial_type))
+                return None
+        # Handle existing GeoJSON string format
+        return self.parse_geojson(geom_from_metadata)
+
     def parse_geojson(self, geom_from_metadata):
 
         try:
@@ -51,10 +99,15 @@ class SolrBBoxSearchBackend(SpatialSearchBackend):
         """
 
         geom_from_metadata = dataset_dict.get("spatial")
+
         if not geom_from_metadata:
             return dataset_dict
 
-        geometry = self.parse_geojson(geom_from_metadata)
+        geometry = self.process_spatial_field(geom_from_metadata)
+        
+        if not geometry:
+            return dataset_dict
+        
         shape = self.shape_from_geometry(geometry)
 
         if not shape:
@@ -134,10 +187,12 @@ class SolrSpatialFieldSearchBackend(SpatialSearchBackend):
     def index_dataset(self, dataset_dict):
         wkt = None
         geom_from_metadata = dataset_dict.get("spatial")
+
         if not geom_from_metadata:
             return dataset_dict
 
-        geometry = self.parse_geojson(geom_from_metadata)
+        geometry = self.process_spatial_field(geom_from_metadata)
+
         if not geometry:
             return dataset_dict
 
