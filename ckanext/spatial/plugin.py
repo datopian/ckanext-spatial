@@ -69,39 +69,9 @@ class SpatialMetadata(p.SingletonPlugin):
         self.check_spatial_extra(data_dict, update=True)
 
     def check_spatial_extra(self, dataset_dict, update=False):
-        '''
-        For a given dataset, looks at the spatial extent (as given in the
-        "spatial" field/extra in GeoJSON format) and stores it in the database.
-        '''
-
-        dataset_id = dataset_dict["id"]
-        geometry = dataset_dict.get("spatial")
-
-        if not geometry:
-            # Check extras
-            for extra in dataset_dict.get("extras", []):
-                if extra["key"] == "spatial":
-                    geometry = extra["value"]
-
-        if not geometry:
-            return
-
-        # Check valid JSON
-        try:
-            log.debug("Received geometry: {}".format(geometry))
-
-            geometry = geojson.loads(str(geometry))
-        except ValueError as e:
-            error_dict = {
-                "spatial": ["Error decoding JSON object: {}".format(str(e))]}
-            raise tk.ValidationError(error_dict)
-
-        if not hasattr(geometry, "is_valid") or not geometry.is_valid:
-            msg = "Error: Wrong GeoJSON object"
-            if hasattr(geometry, "errors"):
-                msg = msg + ": {}".format(geometry.errors())
-            error_dict = {"spatial": [msg]}
-            raise tk.ValidationError(error_dict)
+        # no need to validate spatial as validation already done in scheming 
+        pass
+       
 
     # ITemplateHelpers
 
