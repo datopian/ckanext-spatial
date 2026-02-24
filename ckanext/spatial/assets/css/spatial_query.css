@@ -56,3 +56,166 @@
 .modal-spatial-query {
   max-width: 900px;
 }
+
+/* Manual bbox input panel */
+.bbox-toggle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 10px;
+  background: #efefef;
+  border: none;
+  border-bottom: 1px solid #ddd;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+}
+.bbox-toggle-bar:hover {
+  background: #e5e5e5;
+}
+.bbox-toggle-icon {
+  font-size: 10px;
+  color: #888;
+  transition: transform 0.2s;
+}
+.bbox-toggle-bar--collapsed .bbox-toggle-icon {
+  transform: rotate(-90deg);
+}
+
+#spatial-bbox-manual {
+  padding: 8px 10px 10px;
+  background: #f8f8f8;
+  border-bottom: 1px solid #ddd;
+}
+
+.bbox-body {
+  padding-top: 10px;
+}
+
+/* Compass-style coordinate layout */
+.bbox-compass {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.bbox-compass-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bbox-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.bbox-dir-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  margin: 0;
+}
+
+.bbox-input {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  text-align: center;
+  background: #fff;
+  color: #333;
+  transition: border-color 0.15s;
+  /* hide number spinners */
+  -moz-appearance: textfield;
+  width: 100px;
+}
+.bbox-input::-webkit-outer-spin-button,
+.bbox-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.bbox-input:focus {
+  border-color: #2b8cbe;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(43,140,190,0.15);
+}
+.bbox-input--invalid {
+  border-color: #c0392b !important;
+  background-color: #fdf3f2 !important;
+}
+
+.bbox-crosshair {
+  font-size: 20px;
+  color: #bbb;
+  line-height: 1;
+  user-select: none;
+  margin-top: 14px; /* align with input, not label */
+}
+
+/* Validation error message */
+.bbox-validation-error {
+  display: none;
+  font-size: 11px;
+  color: #c0392b;
+  background: #fdf3f2;
+  border: 1px solid #e8c3bf;
+  border-radius: 3px;
+  padding: 3px 6px;
+  margin-bottom: 7px;
+  line-height: 1.4;
+}
+
+/* Footer: type select + action buttons */
+.bbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.bbox-type-select {
+  font-size: 12px;
+  padding: 3px 5px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+
+.bbox-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.bbox-type-help {
+  display: none;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #31708f;
+  background: #d9edf7;
+  border: 1px solid #bce8f1;
+  border-radius: 3px;
+}
+.bbox-type-help-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 12px;
+}

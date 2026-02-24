@@ -133,7 +133,9 @@ this.ckan.module('spatial-query', function ($, _) {
               map.removeLayer(module.extentLayer);
             }
             module.extentLayer = extentLayer = e.layer;
-            module.ext_bbox_input.val(extentLayer.getBounds().toBBoxString());
+            var bbox_string = extentLayer.getBounds().toBBoxString();
+            module.ext_bbox_input.val(bbox_string);
+            module._updateBboxInputs(bbox_string);
             map.addLayer(extentLayer);
             element.find('.btn-primary').removeClass('disabled').addClass('btn-primary');
           });
@@ -195,6 +197,71 @@ this.ckan.module('spatial-query', function ($, _) {
 
     },
 
+    _validateBboxInputs: function() {
+      var west  = parseFloat($('#bbox-west').val());
+      var south = parseFloat($('#bbox-south').val());
+      var east  = parseFloat($('#bbox-east').val());
+      var north = parseFloat($('#bbox-north').val());
+
+      $('.bbox-input').removeClass('bbox-input--invalid');
+      $('#bbox-validation-error').hide().text('');
+
+      var missing = isNaN(west) || isNaN(south) || isNaN(east) || isNaN(north);
+      if (missing) {
+        if (isNaN(west))  $('#bbox-west').addClass('bbox-input--invalid');
+        if (isNaN(south)) $('#bbox-south').addClass('bbox-input--invalid');
+        if (isNaN(east))  $('#bbox-east').addClass('bbox-input--invalid');
+        if (isNaN(north)) $('#bbox-north').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('All four coordinates are required.').show();
+        return null;
+      }
+      if (west < -180 || west > 180) {
+        $('#bbox-west').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('West must be between \u2212180 and 180.').show();
+        return null;
+      }
+      if (east < -180 || east > 180) {
+        $('#bbox-east').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('East must be between \u2212180 and 180.').show();
+        return null;
+      }
+      if (south < -90 || south > 90) {
+        $('#bbox-south').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('South must be between \u221290 and 90.').show();
+        return null;
+      }
+      if (north < -90 || north > 90) {
+        $('#bbox-north').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('North must be between \u221290 and 90.').show();
+        return null;
+      }
+      if (west >= east) {
+        $('#bbox-west, #bbox-east').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('West must be less than East.').show();
+        return null;
+      }
+      if (south >= north) {
+        $('#bbox-south, #bbox-north').addClass('bbox-input--invalid');
+        $('#bbox-validation-error').text('South must be less than North.').show();
+        return null;
+      }
+      return {west: west, south: south, east: east, north: north};
+    },
+
+    _updateBboxInputs: function(bbox_string) {
+      if (!bbox_string) {
+        $('#bbox-west, #bbox-south, #bbox-east, #bbox-north').val('');
+        return;
+      }
+      var parts = bbox_string.split(',');
+      if (parts.length === 4) {
+        $('#bbox-west').val(parseFloat(parts[0]).toFixed(4));
+        $('#bbox-south').val(parseFloat(parts[1]).toFixed(4));
+        $('#bbox-east').val(parseFloat(parts[2]).toFixed(4));
+        $('#bbox-north').val(parseFloat(parts[3]).toFixed(4));
+      }
+    },
+
     // Is there an existing box from a previous search?
     _setPreviousBBBox: function(map, zoom=true) {
       let module = this;
@@ -223,6 +290,12 @@ this.ckan.module('spatial-query', function ($, _) {
       }
       module.ext_bbox_input = $('#dataset-search-form #ext_bbox');
 
+      // Add spatial type field to the search form
+      if ($("#ext_search_type").length === 0) {
+        $('<input type="hidden" />').attr({'id': 'ext_search_type', 'name': 'ext_search_type'}).appendTo(form);
+      }
+      module.ext_search_type_input = $('#dataset-search-form #ext_search_type');
+
       // OK map time
       this.mainMap = map = this._createMap('dataset-map-container');
 
@@ -247,6 +320,86 @@ this.ckan.module('spatial-query', function ($, _) {
       map.addControl(new expandButton());
 
       module._setPreviousBBBox(map);
+
+      // Sync manual inputs from URL params
+      module._updateBboxInputs(module.ext_bbox_input.val());
+      var existing_type = module._getParameterByName('ext_search_type');
+      if (existing_type) {
+        module.ext_search_type_input.val(existing_type);
+        $('#bbox-spatial-type').val(existing_type);
+      }
+
+      // Spatial type help text
+      var typeHelp = {
+        intersect: 'Returns datasets that overlap or intersect with the specified coordinate even partially.',
+        exact: 'Returns datasets whose coordinate exactly matches the specified coordinates.'
+      };
+      function updateTypeHelp() {
+        var text = typeHelp[$('#bbox-spatial-type').val()] || '';
+        $('#bbox-type-help-text').text(text);
+        $('#bbox-type-help').css('display', text ? 'flex' : 'none');
+      }
+      $('#bbox-spatial-type').on('change', updateTypeHelp);
+      updateTypeHelp();
+
+      // Collapsible bbox panel
+      var COLLAPSE_KEY = 'ckan_spatial_bbox_collapsed';
+      var bboxBody = $('#bbox-body');
+      var bboxToggle = $('#bbox-toggle');
+      var bboxCollapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+      if (bboxCollapsed) {
+        bboxBody.hide();
+        bboxToggle.attr('aria-expanded', 'false').addClass('bbox-toggle-bar--collapsed');
+      }
+      bboxToggle.on('click', function() {
+        bboxCollapsed = !bboxCollapsed;
+        localStorage.setItem(COLLAPSE_KEY, bboxCollapsed ? '1' : '0');
+        bboxBody.slideToggle(150);
+        bboxToggle.attr('aria-expanded', bboxCollapsed ? 'false' : 'true')
+                  .toggleClass('bbox-toggle-bar--collapsed', bboxCollapsed);
+      });
+
+      // Clear validation state when user edits any coordinate input
+      $(document).on('input', '.bbox-input', function() {
+        $(this).removeClass('bbox-input--invalid');
+        if (!$('.bbox-input--invalid').length) {
+          $('#bbox-validation-error').hide().text('');
+        }
+      });
+
+      // Apply button: validate then build bbox and submit
+      $('#bbox-apply').on('click', function() {
+        var coords = module._validateBboxInputs();
+        if (!coords) return;
+
+        var bbox_string = coords.west + ',' + coords.south + ',' + coords.east + ',' + coords.north;
+        module.ext_bbox_input.val(bbox_string);
+        module.ext_search_type_input.val($('#bbox-spatial-type').val());
+
+        // Draw on the main map
+        if (module.extentLayer) {
+          module.mainMap.removeLayer(module.extentLayer);
+        }
+        module.extentLayer = module._drawExtentFromCoords(coords.west, coords.south, coords.east, coords.north);
+        module.mainMap.addLayer(module.extentLayer);
+        module.mainMap.fitBounds(module.extentLayer.getBounds(), {padding: [10, 10]});
+
+        $(".search-form").submit();
+      });
+
+      // Clear button: wipe everything and re-submit
+      $('#bbox-clear').on('click', function() {
+        $('#bbox-west, #bbox-south, #bbox-east, #bbox-north').val('').removeClass('bbox-input--invalid');
+        $('#bbox-validation-error').hide().text('');
+        $('#bbox-spatial-type').val('intersect');
+        module.ext_bbox_input.val('');
+        module.ext_search_type_input.val('');
+        if (module.extentLayer) {
+          module.mainMap.removeLayer(module.extentLayer);
+          module.extentLayer = null;
+        }
+        $(".search-form").submit();
+      });
 
     }
   }

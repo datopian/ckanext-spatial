@@ -16,9 +16,57 @@ e.g.
     <h2 class="module-heading">
         <i class="fa fa-globe"></i>
         {{ _('Filter by location') }}
-        <a href="{{ h.remove_url_param(['ext_bbox']) }}" class="action">{{ _('Clear') }}</a>
+        <a href="{{ h.remove_url_param(['ext_bbox', 'ext_search_type']) }}" class="action">{{ _('Clear') }}</a>
     </h2>
     {% set map_config = h.get_common_map_config() %}
+    <div id="spatial-bbox-manual">
+        <button class="bbox-toggle-bar" id="bbox-toggle" type="button" aria-expanded="true" aria-controls="bbox-body">
+            <span class="bbox-toggle-label">{{ _('Enter Coordinates') }}</span>
+            <span class="bbox-toggle-icon" aria-hidden="true">&#9660;</span>
+        </button>
+        <div class="bbox-body" id="bbox-body">
+        <div class="bbox-compass">
+            <div class="bbox-compass-row bbox-compass-row--top">
+                <div class="bbox-field">
+                    <label class="bbox-dir-label" for="bbox-north">{{ _('N') }}</label>
+                    <input type="number" id="bbox-north" class="bbox-input" step="any" min="-90" max="90" placeholder="90">
+                </div>
+            </div>
+            <div class="bbox-compass-row bbox-compass-row--mid">
+                <div class="bbox-field">
+                    <label class="bbox-dir-label" for="bbox-west">{{ _('W') }}</label>
+                    <input type="number" id="bbox-west" class="bbox-input" step="any" min="-180" max="180" placeholder="-180">
+                </div>
+                <div class="bbox-crosshair" aria-hidden="true">&#8853;</div>
+                <div class="bbox-field">
+                    <label class="bbox-dir-label" for="bbox-east">{{ _('E') }}</label>
+                    <input type="number" id="bbox-east" class="bbox-input" step="any" min="-180" max="180" placeholder="180">
+                </div>
+            </div>
+            <div class="bbox-compass-row bbox-compass-row--bot">
+                <div class="bbox-field">
+                    <label class="bbox-dir-label" for="bbox-south">{{ _('S') }}</label>
+                    <input type="number" id="bbox-south" class="bbox-input" step="any" min="-90" max="90" placeholder="-90">
+                </div>
+            </div>
+        </div>
+        <div id="bbox-validation-error" class="bbox-validation-error"></div>
+        <div class="bbox-footer">
+            <select id="bbox-spatial-type" class="bbox-type-select">
+                <option value="intersect">{{ _('Intersect') }}</option>
+                <option value="exact">{{ _('Exact') }}</option>
+            </select>
+            <div class="bbox-buttons">
+                <button id="bbox-apply" class="btn btn-primary btn-sm">{{ _('Apply') }}</button>
+                <button id="bbox-clear" class="btn btn-default btn-sm">{{ _('Clear') }}</button>
+            </div>
+        </div>
+        <div id="bbox-type-help" class="bbox-type-help">
+            <i class="fa fa-info-circle bbox-type-help-icon" aria-hidden="true"></i>
+            <span id="bbox-type-help-text"></span>
+        </div>
+        </div>{# /bbox-body #}
+    </div>
     <div class="dataset-map" data-module="spatial-query" data-default_extent="{{ default_extent }}" data-module-map_config="{{ h.dump_json(map_config) }}">
         <div id="dataset-map-container"></div>
     </div>
