@@ -15,6 +15,29 @@ from ckanext.spatial.lib import normalize_bbox, fit_bbox, fit_linear_ring
 
 log = logging.getLogger(__name__)
 
+_BBOX_PRECISION = 6
+
+# Tolerance used when matching indexed bbox values against a search query.
+# Indexed values may differ from the original coordinates by up to ~0.00001
+# degrees due to Shapely float64→float32 truncation in Solr, and users
+# routinely enter fewer decimal places than the stored value.
+# 0.0001 degrees ≈ 11 m — small enough to distinguish genuinely different
+# bounding boxes, large enough to absorb precision noise and 4-d.p. input.
+
+# When a dataset is saved, its bounding box coordinates get slightly altered by Python and Solr's internal number handling — for example, 85.056152 might be stored as 85.05615. So when a user searches with "Exact" match and types 85.0562, it won't find the dataset because the numbers don't match perfectly. To fix this, the exact search now looks for datasets within a tiny ±0.0001° window (about 11 metres) around the entered coordinates — close enough to catch these rounding differences, but tight enough not to match genuinely different locations. Result ordering differs between modes: Intersect ranks results by how much each dataset overlaps the searched area (best overlap first), while Exact only filters datasets in or out with no overlap scoring, so results fall back to most recently updated first.
+_BBOX_EXACT_TOLERANCE = 0.0001
+
+
+def _round_bbox(bbox):
+    """Round bbox values to _BBOX_PRECISION to remove Shapely float noise.
+
+    Shapely's .bounds can produce values like 85.05615199999999 from an
+    input of 85.056152.  Rounding to 6 d.p. before storing keeps indexed
+    values clean and close to the original coordinates without discarding
+    meaningful precision.
+    """
+    return {k: round(v, _BBOX_PRECISION) for k, v in bbox.items()}
+
 
 class SpatialSearchBackend:
     """Base class for all datastore backends."""
@@ -31,8 +54,12 @@ class SpatialSearchBackend:
             value = geom_from_metadata.get("value")
             
             if spatial_type == "bbox" and value:
-                # Convert bbox array to GeoJSON polygon
-                # bbox format: [Northernmost latitude, Southernmost latitude, Easternmost longitude, Westernmost longitude]
+                # Convert bbox array to GeoJSON polygon.
+                # Expected array order: [N, S, E, W]
+                #   i.e. [maxy, miny, maxx, minx]
+                #   e.g. [27.732161, 27.391278, 86.088867, 85.056152]
+                # Note: this is different from the ext_bbox search parameter
+                # which uses the standard GeoJSON order [W, S, E, N].
                 if len(value) == 4:
                     maxy, miny, maxx, minx = value
                     geometry = {
@@ -119,30 +146,22 @@ class SolrBBoxSearchBackend(SpatialSearchBackend):
         if not bbox:
             return dataset_dict
 
+        bbox = _round_bbox(bbox)
         dataset_dict.update(bbox)
 
         return dataset_dict
 
-    def search_params(self, bbox, search_params):
+    def search_params(self, bbox, search_params, spatial_type="intersect"):
         """
-        This will add the following parameters to the query:
+        Applies a spatial filter using the indexed minx/miny/maxx/maxy fields.
 
-            defType - edismax (We need to define EDisMax to use bf)
-            bf - {function} A boost function to influence the score (thus
-                 influencing the sorting). The algorithm can be basically defined as:
-
-                    2 * X / Q + T
-
-                 Where X is the intersection between the query area Q and the
-                 target geometry T. It gives a ratio from 0 to 1 where 0 means
-                 no overlap at all and 1 a perfect fit
-
-             fq - Adds a filter that force the value returned by the previous
-                  function to be between 0 and 1, effectively applying the
-                  spatial filter.
-
+        spatial_type:
+          "intersect" (default) - dataset bbox must overlap with the query bbox,
+                                  scored by degree of overlap via a boost function
+          "exact"               - dataset bbox must exactly equal the query bbox,
+                                  no scoring, no frange
         """
-
+        bbox = dict(bbox)
         while bbox["minx"] < -180:
             bbox["minx"] += 360
             bbox["maxx"] += 360
@@ -150,35 +169,40 @@ class SolrBBoxSearchBackend(SpatialSearchBackend):
             bbox["minx"] -= 360
             bbox["maxx"] -= 360
 
-        values = dict(
-            input_minx=bbox["minx"],
-            input_maxx=bbox["maxx"],
-            input_miny=bbox["miny"],
-            input_maxy=bbox["maxy"],
-            area_search=abs(bbox["maxx"] - bbox["minx"])
-            * abs(bbox["maxy"] - bbox["miny"]),
-        )
+        search_params.setdefault("fq_list", [])
 
-        bf = (
-            """div(
-                   mul(
-                   mul(max(0, sub(min({input_maxx},maxx) , max({input_minx},minx))),
-                       max(0, sub(min({input_maxy},maxy) , max({input_miny},miny)))
-                       ),
-                   2),
-                   add({area_search},mul(sub(maxy, miny), sub(maxx, minx)))
-                )""".format(
-                **values
+        if spatial_type == "exact":
+            # Use a small tolerance range instead of strict equality so that
+            # minor float precision differences (Shapely → Solr float32) and
+            # users entering fewer decimal places all resolve to a match.
+            # e.g. stored 85.05615, search 85.056152 or 85.0562 all hit
+            # the range [85.0561 TO 85.0563].
+            eps = _BBOX_EXACT_TOLERANCE
+            search_params["fq_list"].append(
+                f"minx:[{bbox['minx'] - eps} TO {bbox['minx'] + eps}]"
+                f" AND miny:[{bbox['miny'] - eps} TO {bbox['miny'] + eps}]"
+                f" AND maxx:[{bbox['maxx'] - eps} TO {bbox['maxx'] + eps}]"
+                f" AND maxy:[{bbox['maxy'] - eps} TO {bbox['maxy'] + eps}]"
             )
-            .replace("\n", "")
-            .replace(" ", "")
-        )
+        else:
+            minx = bbox["minx"]
+            maxx = bbox["maxx"]
+            miny = bbox["miny"]
+            maxy = bbox["maxy"]
+            area_search = abs(maxx - minx) * abs(maxy - miny)
 
-        search_params["fq_list"] = search_params.get("fq_list", [])
-        search_params["fq_list"].append("{!frange incl=false l=0 u=1}%s" % bf)
 
-        search_params["bf"] = bf
-        search_params["defType"] = "edismax"
+            bf = (
+                f"div("
+                f"mul(mul(max(0,sub(min({maxx},maxx),max({minx},minx))),"
+                f"max(0,sub(min({maxy},maxy),max({miny},miny)))),2),"
+                f"add({area_search},mul(sub(maxy,miny),sub(maxx,minx)))"
+                f")"
+            )
+
+            search_params["fq_list"].append(f"{{!frange incl=false l=0}}{bf}")
+            search_params["bf"] = bf
+            search_params["defType"] = "edismax"
 
         return search_params
 

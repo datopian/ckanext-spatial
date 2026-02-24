@@ -167,8 +167,14 @@ class SpatialQuery(p.SingletonPlugin):
             if not bbox:
                 raise SearchError('Wrong bounding box provided')
 
+            spatial_type = search_params.get('extras', {}).get('ext_search_type', 'intersect')
+            if spatial_type not in ('exact', 'intersect'):
+                raise SearchError(
+                    'Invalid ext_search_type: "{}". Allowed values: exact, intersect'.format(spatial_type)
+                )
+
             search_params = search_backends[search_backend]().search_params(
-                bbox, search_params)
+                bbox, search_params, spatial_type)
 
         return search_params
 
