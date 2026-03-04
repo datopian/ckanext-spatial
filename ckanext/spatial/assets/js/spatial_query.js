@@ -132,8 +132,13 @@ this.ckan.module('spatial-query', function ($, _) {
             if (module.extentLayer) {
               map.removeLayer(module.extentLayer);
             }
-            module.extentLayer = extentLayer = e.layer;
-            var bbox_string = extentLayer.getBounds().toBBoxString();
+            var bounds = e.layer.getBounds();
+            module.extentLayer = extentLayer = module._drawExtentFromCoords(bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth());
+            var west  = Math.max(-180, Math.min(180, bounds.getWest()));
+            var south = Math.max(-90,  Math.min(90,  bounds.getSouth()));
+            var east  = Math.max(-180, Math.min(180, bounds.getEast()));
+            var north = Math.max(-90,  Math.min(90,  bounds.getNorth()));
+            var bbox_string = west + ',' + south + ',' + east + ',' + north;
             module.ext_bbox_input.val(bbox_string);
             module._updateBboxInputs(bbox_string);
             map.addLayer(extentLayer);
